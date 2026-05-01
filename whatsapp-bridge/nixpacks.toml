@@ -1,0 +1,5 @@
+[phases.setup]
+nixPkgs = ["chromium", "nss", "freetype", "harfbuzz", "pango", "xorg.libX11", "xorg.libXext", "xorg.libXfixes", "xorg.libXrender", "xorg.libXcomposite", "xorg.libXcursor", "xorg.libXdamage", "xorg.libXi", "xorg.libXtst", "alsa-lib", "atk", "at-spi2-atk", "cups", "dbus", "expat", "libdrm", "ca-certificates", "fontconfig"]
+
+[start]
+cmd = "node index.js"
