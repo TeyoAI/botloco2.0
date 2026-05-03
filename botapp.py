@@ -520,9 +520,12 @@ def webhook():
     return jsonify({"ok": True}), 200
 
 
-@app.post("/api/webhooks/retell")
+@app.route("/api/webhooks/retell", methods=["GET", "POST"], strict_slashes=False)
 def retell_webhook():
     """Recibe eventos de llamadas de Retell AI (análisis post-llamada)."""
+    if request.method == "GET":
+        return jsonify({"status": "ready"}), 200
+
     try:
         datos = request.get_json(silent=True) or {}
         evento = datos.get("event")
