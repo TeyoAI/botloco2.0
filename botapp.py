@@ -520,6 +520,75 @@ def webhook():
     return jsonify({"ok": True}), 200
 
 
+@app.post("/api/webhooks/retell")
+def retell_webhook():
+    """Recibe eventos de llamadas de Retell AI (análisis post-llamada)."""
+    try:
+        datos = request.get_json(silent=True) or {}
+        evento = datos.get("event")
+        
+        if evento == "call_analyzed":
+            call = datos.get("call", {})
+            
+            # Unimos las variables dinámicas y los datos de análisis post-llamada
+            analisis = call.get("call_analysis", {}) or {}
+            custom_data = analisis.get("custom_analysis_data", {}) or {}
+            dynamic_data = call.get("collected_dynamic_variables", {}) or {}
+            
+            variables = {**dynamic_data, **custom_data}
+            
+            # Procesamos motivo y número
+            motivo = str(variables.get("motivo", "")).lower().strip()
+            numero_cliente = call.get("from_number", "").replace("+", "")
+            
+            log.info("🎯 MOTIVO DETECTADO: '%s' para %s", motivo, numero_cliente)
+
+            if "agendar" in motivo:
+                servicio = variables.get("servicio") or "tu tratamiento"
+                doctoras = variables.get("doctoras") or "nuestros profesionales"
+                mensaje = (
+                    f"Para reservar tu cita de {servicio} con {doctoras}, hazlo aquí: "
+                    "https://www.doctoralia.es/clinicas/clinica-dental-sonrisas-saludables"
+                )
+                enviar_a_whatsapp(numero_cliente, mensaje)
+
+            elif any(x in motivo for x in ["cancelar", "reagendar", "recordar"]):
+                mensaje = (
+                    "Para gestionar, cancelar o recordar tus citas, te recomendamos descargar la App de Doctoralia:\n"
+                    "📲 iOS: https://apps.apple.com/es/app/doctoralia/id1081682337\n"
+                    "📲 Android: https://play.google.com/store/apps/details?id=com.docplanner.doctoralia\n\n"
+                    "Si prefieres hablar con nosotros, nuestro horario es de Lunes a Jueves: 10:00 - 14:00 y 15:30 - 19:30. Y Viernes: 10:00 - 14:00"
+                )
+                enviar_a_whatsapp(numero_cliente, mensaje)
+
+            elif "humano" in motivo:
+                mensaje = (
+                    "¡Hola! Hemos visto que querías hablar con nosotros. "
+                    "Para poder atenderte personalmente, llámanos en nuestro horario laboral:\n"
+                    "🕒 Lunes a Jueves: 10:00 - 14:00 y 15:30 - 19:30.\nY Viernes: 10:00 - 14:00\n"
+                    "¡Estaremos encantados de ayudarte!"
+                )
+                enviar_a_whatsapp(numero_cliente, mensaje)
+
+            elif "aseguradora" in motivo:
+                mensaje = (
+                    "Gracias por consultarnos sobre tu aseguradora. "
+                    "Recuerda traer tu tarjeta física o digital el día de tu cita para poder tramitar la autorización."
+                )
+                enviar_a_whatsapp(numero_cliente, mensaje)
+
+            elif "informacion" in motivo:
+                log.info("El cliente %s solo buscaba información. No se envía WhatsApp.", numero_cliente)
+
+            else:
+                log.warning("Motivo no identificado (%s).", motivo)
+
+    except Exception as e:
+        log.exception("Error procesando webhook de Retell: %s", e)
+        
+    return jsonify({"status": "received"}), 200
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
