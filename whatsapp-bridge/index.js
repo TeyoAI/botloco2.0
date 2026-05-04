@@ -66,6 +66,11 @@ function crearCliente() {
     authStrategy: new LocalAuth(),
     puppeteer: {
       headless: true,
+      // Margen sobre el default por si el contenedor va lento al inyectar el
+      // store de WA Web. El error original era exactamente este timeout.
+      protocolTimeout: 120000,
+      // Sin --single-process: ese flag colapsa renderer+browser en un proceso
+      // y bloquea Runtime.callFunctionOn al recargar sesión en WA Web.
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -73,7 +78,6 @@ function crearCliente() {
         '--disable-accelerated-2d-canvas',
         '--no-first-run',
         '--no-zygote',
-        '--single-process',
         '--disable-gpu'
       ],
       executablePath: '/usr/bin/chromium'
@@ -120,7 +124,20 @@ function crearCliente() {
     qrPending = false;
     lastDisconnectReason = String(reason);
     log('warn', 'disconnected, motivo:', reason);
-    if (!isResetting) scheduleReconnect();
+    if (isResetting) return;
+
+    // Si el motivo indica que el dispositivo fue desvinculado desde el móvil
+    // (o entró en conflicto con otra sesión), reusar la sesión local provoca
+    // el ProtocolError en inject. Borramos .wwebjs_auth y forzamos QR nuevo.
+    const wipeReasons = ['LOGOUT', 'UNPAIRED', 'UNPAIRED_IDLE', 'CONFLICT'];
+    if (wipeReasons.includes(String(reason).toUpperCase())) {
+      wipeAndReinit(reason).catch((err) => {
+        log('error', `wipeAndReinit tras disconnect falló: ${err.message}`);
+        scheduleReconnect();
+      });
+    } else {
+      scheduleReconnect();
+    }
   });
 
   c.on('change_state', (state) => {
@@ -218,18 +235,60 @@ async function flushBuffer(fromNumber) {
 // ---------------------------------------------------------------------------
 // Reconexión
 // ---------------------------------------------------------------------------
+// Recreamos siempre el cliente: tras un disconnected, el objeto puppeteer
+// asociado puede quedar en estado degradado y reusar el mismo cliente es
+// parte de la causa del ProtocolError en inject.
 function scheduleReconnect() {
   if (reconnectTimer) return;
   reconnectAttempt += 1;
   const delay = Math.min(RECONNECT_BASE_MS * 2 ** (reconnectAttempt - 1), RECONNECT_MAX_MS);
   log('warn', `Reintentando inicialización en ${Math.round(delay / 1000)}s (intento #${reconnectAttempt})`);
-  reconnectTimer = setTimeout(() => {
+  reconnectTimer = setTimeout(async () => {
     reconnectTimer = null;
-    client.initialize().catch((err) => {
-      log('error', 'Fallo en client.initialize():', err.message);
+    try {
+      try { await client.destroy(); } catch (_) { /* puede estar ya muerto */ }
+      client = crearCliente();
+      await client.initialize();
+    } catch (err) {
+      log('error', 'Fallo en reconnect:', err.message);
       scheduleReconnect();
-    });
+    }
   }, delay);
+}
+
+// Borra la sesión local, destruye el cliente y arranca uno nuevo. Se usa
+// tanto desde POST /reset como desde el handler 'disconnected' cuando el
+// motivo indica logout/unpair (la sesión cacheada ya no sirve).
+async function wipeAndReinit(reason) {
+  if (isResetting) return;
+  isResetting = true;
+  log('warn', `wipeAndReinit (${reason}): destruyendo cliente y borrando sesión local`);
+
+  isReady = false;
+  qrPending = false;
+  lastQrCode = null;
+
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+
+  try {
+    try {
+      await client.destroy();
+    } catch (err) {
+      log('warn', 'client.destroy() en wipeAndReinit falló:', err.message);
+    }
+
+    fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+    log('info', `Sesión borrada en ${AUTH_DIR}`);
+
+    reconnectAttempt = 0;
+    client = crearCliente();
+    await client.initialize();
+  } finally {
+    isResetting = false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -316,43 +375,13 @@ app.post('/reset', requireAuth, async (req, res) => {
   if (isResetting) {
     return res.status(429).json({ error: 'reset_in_progress' });
   }
-  isResetting = true;
-  log('warn', '/reset: destruyendo cliente y borrando sesión local');
-
-  isReady = false;
-  qrPending = false;
-  lastQrCode = null;
-
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-  }
-
   try {
-    try {
-      await client.destroy();
-    } catch (err) {
-      log('warn', 'client.destroy() en /reset falló:', err.message);
-    }
-
-    try {
-      fs.rmSync(AUTH_DIR, { recursive: true, force: true });
-      log('info', `Sesión borrada en ${AUTH_DIR}`);
-    } catch (err) {
-      log('error', 'No pude borrar la carpeta de sesión:', err.message);
-      return res.status(500).json({ error: 'wipe_failed', message: err.message });
-    }
-
-    reconnectAttempt = 0;
-    client = crearCliente();
-    client.initialize().catch((err) => {
-      log('error', 'initialize() tras /reset falló:', err.message);
-      scheduleReconnect();
-    });
-
+    await wipeAndReinit('manual_reset');
     return res.json({ status: 'ok', message: 'sesión borrada, esperando nuevo QR en /qr' });
-  } finally {
-    isResetting = false;
+  } catch (err) {
+    log('error', '/reset falló:', err.message);
+    scheduleReconnect();
+    return res.status(500).json({ error: 'reset_failed', message: err.message });
   }
 });
 
