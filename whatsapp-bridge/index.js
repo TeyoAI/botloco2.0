@@ -60,8 +60,17 @@ const log = (level, ...args) => {
 // ---------------------------------------------------------------------------
 let client = null;
 let isResetting = false;
+let isInitializing = false;
+// Cada llamada a crearCliente() incrementa esta generación. Los listeners
+// capturan su generación en closure y se vuelven no-op si ya no son los
+// activos: previene cascadas de reconexión cuando el cliente viejo emite
+// eventos tardíos tras destroy().
+let clientGeneration = 0;
 
 function crearCliente() {
+  const generation = ++clientGeneration;
+  const isStale = () => generation !== clientGeneration;
+
   const c = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
@@ -85,6 +94,7 @@ function crearCliente() {
   });
 
   c.on('qr', (qr) => {
+    if (isStale()) return;
     qrPending = true;
     isReady = false;
     lastQrCode = qr;
@@ -96,15 +106,18 @@ function crearCliente() {
   });
 
   c.on('loading_screen', (percent, message) => {
+    if (isStale()) return;
     log('info', `loading_screen: ${percent}% ${message || ''}`);
   });
 
   c.on('authenticated', () => {
+    if (isStale()) return;
     qrPending = false;
-    log('info', 'Sesión autenticada (LocalAuth guardado)');
+    log('info', `[gen ${generation}] Sesión autenticada (LocalAuth guardado)`);
   });
 
   c.on('auth_failure', (msg) => {
+    if (isStale()) return;
     isReady = false;
     qrPending = false;
     log('error', 'auth_failure:', msg);
@@ -112,18 +125,23 @@ function crearCliente() {
   });
 
   c.on('ready', () => {
+    if (isStale()) return;
     isReady = true;
     qrPending = false;
     lastQrCode = null;
     reconnectAttempt = 0;
-    log('info', 'Cliente WhatsApp Web listo');
+    log('info', `[gen ${generation}] Cliente WhatsApp Web listo`);
   });
 
   c.on('disconnected', (reason) => {
+    if (isStale()) {
+      log('warn', `[gen ${generation}] disconnected (stale, ignorado): ${reason}`);
+      return;
+    }
     isReady = false;
     qrPending = false;
     lastDisconnectReason = String(reason);
-    log('warn', 'disconnected, motivo:', reason);
+    log('warn', `[gen ${generation}] disconnected, motivo:`, reason);
     if (isResetting) return;
 
     // Si el motivo indica que el dispositivo fue desvinculado desde el móvil
@@ -141,10 +159,15 @@ function crearCliente() {
   });
 
   c.on('change_state', (state) => {
+    if (isStale()) return;
     log('info', 'change_state:', state);
   });
 
   c.on('message', async (msg) => {
+    if (isStale()) return;
+    // Diagnóstico: vemos TODO lo que entra antes de filtrar, para distinguir
+    // "no llegan mensajes" de "llegan pero los descartamos".
+    log('info', `msg recibido from=${msg.from} type=${msg.type} fromMe=${msg.fromMe}`);
     // Sin filtro de timestamp: descartaba mensajes válidos cuando había
     // desfase de reloj o ráfagas de sincronización al vincular un nuevo número.
     if (msg.from.includes('@g.us') || msg.from === 'status@broadcast') return;
@@ -258,22 +281,28 @@ async function flushBuffer(fromNumber) {
 // ---------------------------------------------------------------------------
 // Recreamos siempre el cliente: tras un disconnected, el objeto puppeteer
 // asociado puede quedar en estado degradado y reusar el mismo cliente es
-// parte de la causa del ProtocolError en inject.
+// parte de la causa del ProtocolError en inject. isInitializing impide que
+// dos ciclos de reconexión arranquen a la vez (cascada de clientes).
 function scheduleReconnect() {
-  if (reconnectTimer) return;
+  if (reconnectTimer || isInitializing || isResetting) return;
   reconnectAttempt += 1;
   const delay = Math.min(RECONNECT_BASE_MS * 2 ** (reconnectAttempt - 1), RECONNECT_MAX_MS);
   log('warn', `Reintentando inicialización en ${Math.round(delay / 1000)}s (intento #${reconnectAttempt})`);
   reconnectTimer = setTimeout(async () => {
     reconnectTimer = null;
+    if (isInitializing || isResetting) return;
+    isInitializing = true;
     try {
       try { await client.destroy(); } catch (_) { /* puede estar ya muerto */ }
       client = crearCliente();
       await client.initialize();
     } catch (err) {
       log('error', 'Fallo en reconnect:', err.message);
+      isInitializing = false;
       scheduleReconnect();
+      return;
     }
+    isInitializing = false;
   }, delay);
 }
 
@@ -281,8 +310,9 @@ function scheduleReconnect() {
 // tanto desde POST /reset como desde el handler 'disconnected' cuando el
 // motivo indica logout/unpair (la sesión cacheada ya no sirve).
 async function wipeAndReinit(reason) {
-  if (isResetting) return;
+  if (isResetting || isInitializing) return;
   isResetting = true;
+  isInitializing = true;
   log('warn', `wipeAndReinit (${reason}): destruyendo cliente y borrando sesión local`);
 
   isReady = false;
@@ -309,6 +339,7 @@ async function wipeAndReinit(reason) {
     await client.initialize();
   } finally {
     isResetting = false;
+    isInitializing = false;
   }
 }
 
@@ -414,10 +445,14 @@ app.listen(PORT, HOST, () => {
   log('info', `Reenviando webhooks a ${FLASK_WEBHOOK_URL}`);
 });
 
-client.initialize().catch((err) => {
-  log('error', 'client.initialize() inicial falló:', err.message);
-  scheduleReconnect();
-});
+isInitializing = true;
+client.initialize()
+  .then(() => { isInitializing = false; })
+  .catch((err) => {
+    isInitializing = false;
+    log('error', 'client.initialize() inicial falló:', err.message);
+    scheduleReconnect();
+  });
 
 // Salida limpia
 function gracefulExit(signal) {
