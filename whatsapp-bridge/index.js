@@ -17,6 +17,10 @@ const axios = require('axios');
 
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 
+console.error('************************************************');
+console.error('!!! EL BRIDGE ESTÁ ARRANCANDO - VERSION 1.0.9 !!!');
+console.error('************************************************');
+
 const AUTH_DIR = path.join(__dirname, '.wwebjs_auth');
 
 // --- LIMPIEZA DE SESIÓN FORZADA (Arreglo para sesiones congeladas) ---
