@@ -3,42 +3,40 @@
 # ============================================================
 FROM node:18-slim
 
-# ── Dependencias del sistema ──────────────────────────────
+# ── Dependencias del sistema en una sola capa ─────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip \
+    python3 python3-pip python3-venv \
     chromium \
-    ca-certificates fonts-liberation \
+    ca-certificates \
+    fonts-liberation \
     libatk-bridge2.0-0 libatk1.0-0 libcups2 libdrm2 libgbm1 \
     libnss3 libxcomposite1 libxdamage1 libxrandr2 libxss1 libxtst6 \
     supervisor \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # ── Puppeteer: usa Chromium del sistema ───────────────────
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# ── URLs internas: Flask <-> Bridge por localhost ─────────
-# El bridge enviará los mensajes a Flask a través de la URL de webhook local.
-ENV FLASK_WEBHOOK_URL=http://127.0.0.1:8080/webhook
+# ── URLs internas ─────────────────────────────────────────
 ENV WA_BRIDGE_URL=http://127.0.0.1:3000
 
 WORKDIR /app
 
-# ── Dependencias Node ─────────────────────────────────────
+# ── Dependencias Node (cacheadas si package.json no cambia)
 COPY whatsapp-bridge/package.json whatsapp-bridge/package-lock.json ./whatsapp-bridge/
-RUN cd whatsapp-bridge && npm install --omit=dev
+RUN cd whatsapp-bridge && npm ci --omit=dev --prefer-offline
 
-# ── Dependencias Python ───────────────────────────────────
+# ── Dependencias Python (cacheadas si requirements.txt no cambia)
 COPY requirements.txt ./
 RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
 # ── Código fuente ─────────────────────────────────────────
 COPY . .
 
-# ── Configuración de Supervisor ───────────────────────────
+# ── Supervisor ────────────────────────────────────────────
 COPY supervisord.conf /etc/supervisor/conf.d/app.conf
 
-# Railway usa la variable PORT; nosotros la pasamos a Supervisor.
 EXPOSE 8080
 
 CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/app.conf"]
