@@ -95,8 +95,7 @@ function crearCliente() {
       remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
     },
     puppeteer: {
-      headless: 'new',
-      // User agent real para evitar bloqueos/silencio de eventos
+      headless: true,
       userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
       protocolTimeout: 120000,
       args: [
@@ -107,7 +106,8 @@ function crearCliente() {
         '--no-first-run',
         '--no-zygote',
         '--disable-gpu',
-        '--disable-extensions'
+        '--disable-extensions',
+        '--disable-blink-features=AutomationControlled'
       ],
       executablePath: '/usr/bin/chromium'
     },
