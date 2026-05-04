@@ -498,6 +498,26 @@ def debug():
     return jsonify(info), 200
 
 
+@app.get("/bridge/qr")
+def bridge_qr():
+    """Proxy al /qr del bridge. Escanea el QR de WhatsApp desde aquí."""
+    try:
+        r = requests.get(f"{WA_BRIDGE_URL}/qr", timeout=10)
+        return r.text, r.status_code, {"Content-Type": "text/html; charset=utf-8"}
+    except Exception as exc:
+        return f"<h2>Bridge no accesible: {exc}</h2>", 502
+
+
+@app.get("/bridge/health")
+def bridge_health():
+    """Proxy al /health del bridge."""
+    try:
+        r = requests.get(f"{WA_BRIDGE_URL}/health", timeout=5)
+        return jsonify(r.json()), r.status_code
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 502
+
+
 @app.post("/webhook")
 def webhook():
     """Recibe el payload del bridge whatsapp-web.js (formato Meta-shim)."""
