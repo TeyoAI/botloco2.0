@@ -30,6 +30,8 @@ ENV WA_BRIDGE_URL=http://127.0.0.1:3000
 ENV WA_BRIDGE_PORT=3000
 ENV WA_BRIDGE_HOST=127.0.0.1
 ENV FLASK_HOST=0.0.0.0
+# Puerto fijo 5000: Flask y bridge se comunican siempre aqui.
+ENV PORT=5000
 
 WORKDIR /app
 
@@ -47,7 +49,7 @@ COPY . .
 # ── Configuración de Supervisor ───────────────────────────
 COPY supervisord.conf /etc/supervisor/conf.d/app.conf
 
-# Railway asigna PORT dinámicamente; Flask lo escucha.
+# Flask siempre en 5000, Railway expone este puerto.
 EXPOSE 5000
 
 CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/app.conf"]
