@@ -634,6 +634,17 @@ def retell_webhook():
     return jsonify({"status": "received"}), 200
 
 
+@app.get("/qr")
+def qr_page():
+    """Proxy al endpoint /qr del bridge (solo accesible internamente)."""
+    bridge_internal = "http://127.0.0.1:3000"
+    try:
+        resp = requests.get(f"{bridge_internal}/qr", timeout=5)
+        return resp.text, resp.status_code, {"Content-Type": "text/html"}
+    except requests.RequestException:
+        return "<h2>Bridge no disponible. Espera unos segundos y recarga.</h2>", 503
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
