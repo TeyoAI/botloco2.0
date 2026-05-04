@@ -150,7 +150,28 @@ function crearCliente() {
     if (msg.from.includes('@g.us') || msg.from === 'status@broadcast') return;
     if (msg.fromMe || msg.type !== 'chat') return;
 
-    let fromNumber = msg.from.replace('@c.us', '');
+    // Mensajes desde un Linked Identity (@lid) no son respondibles directamente:
+    // hay que resolver el contacto a su número real (@c.us). Si no se puede,
+    // descartamos para no encolar una respuesta que el bridge no podrá entregar
+    // (y que tumba el worker de Flask por timeout 15s en /send).
+    let chatId = msg.from;
+    if (chatId.endsWith('@lid')) {
+      try {
+        const contact = await msg.getContact();
+        if (contact && contact.number) {
+          chatId = `${contact.number}@c.us`;
+          log('info', `Resuelto @lid ${msg.from} -> ${chatId}`);
+        } else {
+          log('warn', `@lid sin número resoluble (${msg.from}), descartando mensaje`);
+          return;
+        }
+      } catch (err) {
+        log('warn', `getContact() falló para ${msg.from}: ${err.message}, descartando`);
+        return;
+      }
+    }
+
+    let fromNumber = chatId.replace('@c.us', '');
     if (!fromNumber.startsWith('+') && fromNumber.length >= 11) {
       fromNumber = '+' + fromNumber;
     }
