@@ -163,20 +163,20 @@ function crearCliente() {
     log('info', 'change_state:', state);
   });
 
-  c.on('message', async (msg) => {
+  c.on('message_create', async (msg) => {
     if (isStale()) return;
-    // Diagnóstico: vemos TODO lo que entra antes de filtrar, para distinguir
-    // "no llegan mensajes" de "llegan pero los descartamos".
-    log('info', `msg recibido from=${msg.from} type=${msg.type} fromMe=${msg.fromMe}`);
-    // Sin filtro de timestamp: descartaba mensajes válidos cuando había
-    // desfase de reloj o ráfagas de sincronización al vincular un nuevo número.
-    if (msg.from.includes('@g.us') || msg.from === 'status@broadcast') return;
-    if (msg.fromMe || msg.type !== 'chat') return;
+    
+    // Log all message creation for debugging
+    log('info', `msg_create: from=${msg.from} to=${msg.to} type=${msg.type} fromMe=${msg.fromMe} body=${msg.body ? msg.body.substring(0, 20) : 'N/A'}`);
 
-    // Mensajes desde un Linked Identity (@lid) no son respondibles directamente:
-    // hay que resolver el contacto a su número real (@c.us). Si no se puede,
-    // descartamos para no encolar una respuesta que el bridge no podrá entregar
-    // (y que tumba el worker de Flask por timeout 15s en /send).
+    // Solo procesamos mensajes que NO son nuestros y que son chats individuales
+    if (msg.fromMe) return;
+    if (msg.from.includes('@g.us') || msg.from === 'status@broadcast') return;
+    
+    // Filtro de tipo: chat es texto normal. 
+    // Podríamos permitir otros en el futuro, pero por ahora bot es de texto.
+    if (msg.type !== 'chat') return;
+
     let chatId = msg.from;
     if (chatId.endsWith('@lid')) {
       try {
