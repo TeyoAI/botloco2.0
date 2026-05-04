@@ -1,0 +1,6 @@
+flask==3.1.0
+gunicorn==21.2.0
+openai==1.76.0
+python-dotenv==1.0.1
+requests==2.32.3
+tzdata==2024.2
