@@ -91,12 +91,10 @@ function crearCliente() {
       remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
     },
     puppeteer: {
-      headless: true,
-      // Margen sobre el default por si el contenedor va lento al inyectar el
-      // store de WA Web. El error original era exactamente este timeout.
+      headless: 'new',
+      // User agent real para evitar bloqueos/silencio de eventos
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
       protocolTimeout: 120000,
-      // Sin --single-process: ese flag colapsa renderer+browser en un proceso
-      // y bloquea Runtime.callFunctionOn al recargar sesión en WA Web.
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -104,7 +102,8 @@ function crearCliente() {
         '--disable-accelerated-2d-canvas',
         '--no-first-run',
         '--no-zygote',
-        '--disable-gpu'
+        '--disable-gpu',
+        '--disable-extensions'
       ],
       executablePath: '/usr/bin/chromium'
     },
@@ -147,8 +146,9 @@ function crearCliente() {
     qrPending = false;
     lastQrCode = null;
     reconnectAttempt = 0;
-    log('info', `[gen ${generation}] Cliente WhatsApp Web listo`);
-    log('info', `>>> MONITOR ACTIVADO - ESPERANDO MENSAJES (v1.0.6) <<<`);
+    const myNumber = c.info.wid.user;
+    log('info', `[gen ${generation}] Cliente WhatsApp Web listo. Conectado como: ${myNumber}`);
+    log('info', `>>> MONITOR ACTIVADO - ESPERANDO MENSAJES (v1.0.7) <<<`);
   });
 
   c.on('disconnected', (reason) => {
