@@ -476,6 +476,28 @@ def health():
     return jsonify({"status": "ok"}), 200
 
 
+@app.get("/debug")
+def debug():
+    """Muestra configuración y hace ping al bridge para detectar problemas de conectividad."""
+    import requests as _req
+    info = {
+        "wa_bridge_url": WA_BRIDGE_URL,
+        "wa_bridge_token_set": bool(WA_BRIDGE_TOKEN),
+        "make_webhook_set": bool(MAKE_WEBHOOK_DOCTORES),
+        "openai_key_set": bool(OPENAI_API_KEY),
+        "openai_model": OPENAI_MODEL,
+        "sesiones_activas": len(sesiones),
+    }
+    try:
+        r = _req.get(f"{WA_BRIDGE_URL}/health", timeout=5)
+        info["bridge_health"] = r.json()
+        info["bridge_reachable"] = True
+    except Exception as exc:
+        info["bridge_reachable"] = False
+        info["bridge_error"] = str(exc)
+    return jsonify(info), 200
+
+
 @app.post("/webhook")
 def webhook():
     """Recibe el payload del bridge whatsapp-web.js (formato Meta-shim)."""
@@ -598,4 +620,9 @@ def retell_webhook():
 if __name__ == "__main__":
     host = os.getenv("FLASK_HOST", "0.0.0.0")
     port = int(os.getenv("PORT", os.getenv("FLASK_PORT", "5000")))
+    log.info("=== CONFIGURACION ===")
+    log.info("WA_BRIDGE_URL     = %s", WA_BRIDGE_URL)
+    log.info("OPENAI_MODEL      = %s", OPENAI_MODEL)
+    log.info("MAKE_WEBHOOK_SET  = %s", bool(MAKE_WEBHOOK_DOCTORES))
+    log.info("====================")
     app.run(host=host, port=port, debug=False)

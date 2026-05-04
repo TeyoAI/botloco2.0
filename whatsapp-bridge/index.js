@@ -265,13 +265,14 @@ async function flushBuffer(fromNumber) {
     if (SHARED_TOKEN) {
       headers['Authorization'] = `Bearer ${SHARED_TOKEN}`;
     }
+    log('info', `>>> Enviando a Flask: POST ${FLASK_WEBHOOK_URL} (from=${fromNumber})`);
     await axios.post(FLASK_WEBHOOK_URL, metaPayload, { headers, timeout: 30000 });
     log('info', `IN <${fromNumber}> (${buffer.messages.length} msg) -> Flask OK`);
   } catch (error) {
     const status = error.response && error.response.status;
     log(
       'error',
-      `Reenviando mensaje a Flask (${fromNumber}): status=${status} msg=${error.message}`
+      `!!! FALLO enviando a Flask en ${FLASK_WEBHOOK_URL} | from=${fromNumber} | HTTP ${status} | ${error.message}`
     );
   }
 }
@@ -438,11 +439,34 @@ app.post('/reset', requireAuth, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Debug
+// ---------------------------------------------------------------------------
+app.get('/debug', async (req, res) => {
+  const info = {
+    bridge_ready: isReady,
+    qr_pending: qrPending,
+    flask_webhook_url: FLASK_WEBHOOK_URL,
+    shared_token_set: !!SHARED_TOKEN,
+    reconnect_attempt: reconnectAttempt,
+    last_disconnect: lastDisconnectReason,
+  };
+  try {
+    const r = await axios.get(FLASK_WEBHOOK_URL.replace('/webhook', '/health'), { timeout: 5000 });
+    info.flask_health = r.data;
+    info.flask_reachable = true;
+  } catch (err) {
+    info.flask_reachable = false;
+    info.flask_error = err.message;
+  }
+  res.json(info);
+});
+
+// ---------------------------------------------------------------------------
 // Arranque
 // ---------------------------------------------------------------------------
 app.listen(PORT, HOST, () => {
   log('info', `Bridge HTTP escuchando en ${HOST}:${PORT}`);
-  log('info', `Reenviando webhooks a ${FLASK_WEBHOOK_URL}`);
+  log('info', `FLASK_WEBHOOK_URL = ${FLASK_WEBHOOK_URL}`);
 });
 
 isInitializing = true;
