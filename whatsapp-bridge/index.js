@@ -166,16 +166,27 @@ function crearCliente() {
   c.on('message_create', async (msg) => {
     if (isStale()) return;
     
-    // Log all message creation for debugging
-    log('info', `msg_create: from=${msg.from} to=${msg.to} type=${msg.type} fromMe=${msg.fromMe} body=${msg.body ? msg.body.substring(0, 20) : 'N/A'}`);
+    // Ignoramos estados para no ensuciar el log y no asustar al usuario
+    if (msg.from === 'status@broadcast') return;
 
-    // Solo procesamos mensajes que NO son nuestros y que son chats individuales
-    if (msg.fromMe) return;
-    if (msg.from.includes('@g.us') || msg.from === 'status@broadcast') return;
+    // Log de lo que entra
+    log('info', `Recibido: from=${msg.from} type=${msg.type} fromMe=${msg.fromMe} body="${msg.body ? msg.body.substring(0, 50) : ''}"`);
+
+    if (msg.fromMe) {
+        log('debug', 'Ignorado: mensaje enviado por el propio bot');
+        return;
+    }
     
-    // Filtro de tipo: chat es texto normal. 
-    // Podríamos permitir otros en el futuro, pero por ahora bot es de texto.
-    if (msg.type !== 'chat') return;
+    if (msg.from.includes('@g.us')) {
+        log('debug', 'Ignorado: mensaje de grupo');
+        return;
+    }
+    
+    // Si el tipo no es chat, lo logueamos por si acaso
+    if (msg.type !== 'chat') {
+        log('info', `Tipo de mensaje no procesable: ${msg.type}`);
+        return;
+    }
 
     let chatId = msg.from;
     if (chatId.endsWith('@lid')) {
