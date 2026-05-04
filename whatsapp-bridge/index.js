@@ -1,68 +1,39 @@
 /**
- * Puente WhatsApp Web -> backend Flask.
- *
- * - Recibe mensajes vía whatsapp-web.js (cliente que escanea QR).
- * - Los reenvía a FLASK_WEBHOOK_URL como POST con un payload con forma de Meta.
- * - Expone POST /send para que el backend mande respuestas por WA.
- *
- * Reconexión automática, flag isReady, bind a 127.0.0.1 por defecto,
- * cabecera Authorization: Bearer compartida con Flask, cap absoluto del buffer.
+ * WhatsApp bridge usando @whiskeysockets/baileys (sin Chromium/Puppeteer).
+ * - Genera QR en /qr
+ * - Reenvía mensajes entrantes a Flask via POST /webhook
+ * - Expone POST /send para responder desde Flask
+ * - POST /reset para cambiar de número (borra sesión, genera nuevo QR)
  */
-const fs = require('fs');
-const path = require('path');
-const { Client, LocalAuth } = require('whatsapp-web.js');
+
+const {
+  default: makeWASocket,
+  useMultiFileAuthState,
+  DisconnectReason,
+  isJidGroup,
+  fetchLatestBaileysVersion,
+} = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const express = require('express');
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
+const pino = require('pino');
 
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 
-console.error('************************************************');
-console.error('!!! EL BRIDGE ESTÁ ARRANCANDO - VERSION 1.0.9 !!!');
-console.error('************************************************');
-
-const AUTH_DIR = path.join(__dirname, '.wwebjs_auth');
-
-// --- LIMPIEZA DE SESIÓN FORZADA (Arreglo para sesiones congeladas) ---
-if (fs.existsSync(AUTH_DIR)) {
-  console.log(`[LIMPIEZA] Borrando sesión vieja en ${AUTH_DIR}...`);
-  try {
-    fs.rmSync(AUTH_DIR, { recursive: true, force: true });
-    console.log('[LIMPIEZA] Sesión borrada con éxito.');
-  } catch (err) {
-    console.error(`[LIMPIEZA] Error borrando sesión: ${err.message}`);
-  }
-}
-// ---------------------------------------------------------------------
+console.error('**********************************************');
+console.error('!!! BRIDGE BAILEYS ARRANCANDO - VERSION 3.0.0 !!!');
+console.error('**********************************************');
 
 const PORT = parseInt(process.env.PORT || process.env.WA_BRIDGE_PORT || '3000', 10);
 const HOST = process.env.WA_BRIDGE_HOST || '0.0.0.0';
-const FLASK_WEBHOOK_URL =
-  process.env.FLASK_WEBHOOK_URL || 'http://127.0.0.1:5000/webhook';
+const FLASK_WEBHOOK_URL = process.env.FLASK_WEBHOOK_URL || 'http://127.0.0.1:5000/webhook';
 const SHARED_TOKEN = (process.env.WA_BRIDGE_TOKEN || '').trim();
+const AUTH_DIR = path.join(__dirname, 'auth_info_baileys');
 
 const BUFFER_WAIT_MS = parseInt(process.env.WA_BUFFER_WAIT_MS || '5000', 10);
 const BUFFER_MAX_MS = parseInt(process.env.WA_BUFFER_MAX_MS || '15000', 10);
-const RECONNECT_BASE_MS = 5000;
-const RECONNECT_MAX_MS = 60000;
-
-if (!SHARED_TOKEN) {
-  console.warn(
-    '[bridge] AVISO: WA_BRIDGE_TOKEN no está definido. /send aceptará cualquier petición que llegue al puerto.'
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Estado
-// ---------------------------------------------------------------------------
-let isReady = false;
-let qrPending = false;
-let lastQrCode = null;
-let lastDisconnectReason = null;
-let reconnectAttempt = 0;
-let reconnectTimer = null;
-
-const messageBuffers = new Map();
 
 const log = (level, ...args) => {
   const ts = new Date().toISOString();
@@ -70,179 +41,142 @@ const log = (level, ...args) => {
 };
 
 // ---------------------------------------------------------------------------
-// Cliente whatsapp-web.js
+// Estado global
 // ---------------------------------------------------------------------------
-let client = null;
+let isReady = false;
+let lastQrCode = null;
+let lastDisconnectReason = null;
+let sock = null;
 let isResetting = false;
-let isInitializing = false;
-// Cada llamada a crearCliente() incrementa esta generación. Los listeners
-// capturan su generación en closure y se vuelven no-op si ya no son los
-// activos: previene cascadas de reconexión cuando el cliente viejo emite
-// eventos tardíos tras destroy().
-let clientGeneration = 0;
 
-function crearCliente() {
-  const generation = ++clientGeneration;
-  const isStale = () => generation !== clientGeneration;
+const messageBuffers = new Map();
 
-  const c = new Client({
-    authStrategy: new LocalAuth({
-      clientId: `gen-${generation}`,
-      dataPath: './.wwebjs_auth'
-    }),
-    webVersionCache: {
-      type: 'remote',
-      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
-    },
-    puppeteer: {
-      headless: true,
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      protocolTimeout: 120000,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu',
-        '--disable-extensions',
-        '--disable-blink-features=AutomationControlled'
-      ],
-      executablePath: '/usr/bin/chromium'
-    },
-  });
-
-  c.on('qr', (qr) => {
-    if (isStale()) return;
-    qrPending = true;
-    isReady = false;
-    lastQrCode = qr;
-    console.log('\n=========================================');
-    console.log('QR DISPONIBLE! Abre este enlace para escanear:');
-    console.log(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`);
-    console.log('=========================================\n');
-    qrcode.generate(qr, { small: true });
-  });
-
-  c.on('loading_screen', (percent, message) => {
-    if (isStale()) return;
-    log('info', `loading_screen: ${percent}% ${message || ''}`);
-  });
-
-  c.on('authenticated', () => {
-    if (isStale()) return;
-    qrPending = false;
-    log('info', `[gen ${generation}] Sesión autenticada (LocalAuth guardado)`);
-  });
-
-  c.on('auth_failure', (msg) => {
-    if (isStale()) return;
-    isReady = false;
-    qrPending = false;
-    log('error', 'auth_failure:', msg);
-    if (!isResetting) scheduleReconnect();
-  });
-
-  c.on('ready', () => {
-    if (isStale()) return;
-    isReady = true;
-    qrPending = false;
-    lastQrCode = null;
-    reconnectAttempt = 0;
-    const myNumber = c.info.wid.user;
-    log('info', `[gen ${generation}] Cliente WhatsApp Web listo. Conectado como: ${myNumber}`);
-    log('info', `>>> MONITOR ACTIVADO - ESPERANDO MENSAJES (v1.0.7) <<<`);
-  });
-
-  c.on('disconnected', (reason) => {
-    if (isStale()) {
-      log('warn', `[gen ${generation}] disconnected (stale, ignorado): ${reason}`);
-      return;
-    }
-    isReady = false;
-    qrPending = false;
-    lastDisconnectReason = String(reason);
-    log('warn', `[gen ${generation}] disconnected, motivo:`, reason);
-    if (isResetting) return;
-
-    // Si el motivo indica que el dispositivo fue desvinculado desde el móvil
-    // (o entró en conflicto con otra sesión), reusar la sesión local provoca
-    // el ProtocolError en inject. Borramos .wwebjs_auth y forzamos QR nuevo.
-    const wipeReasons = ['LOGOUT', 'UNPAIRED', 'UNPAIRED_IDLE', 'CONFLICT'];
-    if (wipeReasons.includes(String(reason).toUpperCase())) {
-      wipeAndReinit(reason).catch((err) => {
-        log('error', `wipeAndReinit tras disconnect falló: ${err.message}`);
-        scheduleReconnect();
-      });
-    } else {
-      scheduleReconnect();
-    }
-  });
-
-  c.on('change_state', (state) => {
-    if (isStale()) return;
-    log('info', 'change_state:', state);
-  });
-
-  const handleAnyMsg = async (msg) => {
-    if (isStale()) return;
-    if (msg.from === 'status@broadcast') return;
-
-    // Log forzado a error para que Railway lo muestre sin buffers
-    console.error(`[TRACE] Mensaje detectado: from=${msg.from} fromMe=${msg.fromMe} type=${msg.type} body="${msg.body || ''}"`);
-
-    if (msg.fromMe) return;
-    if (msg.from.includes('@g.us')) return;
-    if (msg.type !== 'chat') return;
-
-    let chatId = msg.from;
-    if (chatId.endsWith('@lid')) {
-      try {
-        const contact = await msg.getContact();
-        if (contact && contact.number) {
-          chatId = `${contact.number}@c.us`;
-          log('info', `Resuelto @lid ${msg.from} -> ${chatId}`);
-        } else {
-          return;
-        }
-      } catch (err) {
-        return;
-      }
-    }
-
-    let fromNumber = chatId.replace('@c.us', '');
-    if (!fromNumber.startsWith('+') && fromNumber.length >= 11) {
-      fromNumber = '+' + fromNumber;
-    }
-
-    let buffer = messageBuffers.get(fromNumber);
-    if (!buffer) {
-      buffer = {
-        messages: [],
-        ids: [],
-        timer: null,
-        hardTimer: null,
-        startedAt: Date.now(),
-      };
-      messageBuffers.set(fromNumber, buffer);
-      buffer.hardTimer = setTimeout(() => flushBuffer(fromNumber), BUFFER_MAX_MS);
-    }
-
-    buffer.messages.push(msg.body);
-    buffer.ids.push(msg.id.id);
-
-    if (buffer.timer) clearTimeout(buffer.timer);
-    buffer.timer = setTimeout(() => flushBuffer(fromNumber), BUFFER_WAIT_MS);
-  };
-
-  c.on('message', handleAnyMsg);
-  c.on('message_create', handleAnyMsg);
-
-  return c;
+// ---------------------------------------------------------------------------
+// Sesión
+// ---------------------------------------------------------------------------
+function wipeSession() {
+  if (fs.existsSync(AUTH_DIR)) {
+    fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+    log('info', `Sesión borrada en ${AUTH_DIR}`);
+  }
 }
 
-client = crearCliente();
+// ---------------------------------------------------------------------------
+// Baileys socket
+// ---------------------------------------------------------------------------
+async function conectar() {
+  const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+  const { version } = await fetchLatestBaileysVersion();
+  log('info', `Usando WA version: ${version.join('.')}`);
+
+  const logger = pino({ level: 'silent' });
+
+  sock = makeWASocket({
+    version,
+    auth: state,
+    logger,
+    printQRInTerminal: false,
+    browser: ['Sonrisas Bot', 'Chrome', '122.0.0'],
+    connectTimeoutMs: 60000,
+    retryRequestDelayMs: 2000,
+    maxMsgRetryCount: 3,
+  });
+
+  sock.ev.on('creds.update', saveCreds);
+
+  sock.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect, qr } = update;
+
+    if (qr) {
+      lastQrCode = qr;
+      isReady = false;
+      log('info', 'QR generado - visita /qr para escanear');
+      qrcode.generate(qr, { small: true });
+    }
+
+    if (connection === 'open') {
+      isReady = true;
+      lastQrCode = null;
+      lastDisconnectReason = null;
+      const id = sock.user?.id || 'desconocido';
+      log('info', `>>> CONECTADO como ${id} - ESPERANDO MENSAJES (v3.0.0) <<<`);
+    }
+
+    if (connection === 'close') {
+      isReady = false;
+      const code = lastDisconnect?.error?.output?.statusCode;
+      const reason = DisconnectReason[code] || code;
+      lastDisconnectReason = String(reason);
+      log('warn', `Desconectado. Código: ${code} | Razón: ${reason}`);
+
+      const loggedOut = code === DisconnectReason.loggedOut;
+
+      if (isResetting) return;
+
+      if (loggedOut) {
+        log('warn', 'Sesión cerrada por el móvil. Borrando credenciales y generando nuevo QR...');
+        wipeSession();
+        await conectar();
+      } else {
+        log('info', 'Reconectando en 5s...');
+        setTimeout(() => conectar(), 5000);
+      }
+    }
+  });
+
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify') return;
+
+    for (const msg of messages) {
+      const jid = msg.key.remoteJid || '';
+
+      // Ignorar grupos, estados y mensajes propios
+      if (isJidGroup(jid)) continue;
+      if (jid === 'status@broadcast') continue;
+      if (msg.key.fromMe) continue;
+
+      const body =
+        msg.message?.conversation ||
+        msg.message?.extendedTextMessage?.text ||
+        msg.message?.imageMessage?.caption ||
+        msg.message?.videoMessage?.caption ||
+        '';
+
+      console.error(`[TRACE] Mensaje recibido: from=${jid} body="${body}"`);
+
+      if (!body) continue;
+
+      // Extraer número limpio
+      const rawNumber = jid.replace('@s.whatsapp.net', '').replace('@c.us', '');
+      const fromNumber = rawNumber.startsWith('+') ? rawNumber : `+${rawNumber}`;
+
+      bufferMensaje(fromNumber, body, msg.key.id);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Buffer de mensajes (igual que antes)
+// ---------------------------------------------------------------------------
+function bufferMensaje(fromNumber, body, msgId) {
+  let buffer = messageBuffers.get(fromNumber);
+  if (!buffer) {
+    buffer = {
+      messages: [],
+      ids: [],
+      timer: null,
+      hardTimer: null,
+    };
+    messageBuffers.set(fromNumber, buffer);
+    buffer.hardTimer = setTimeout(() => flushBuffer(fromNumber), BUFFER_MAX_MS);
+  }
+
+  buffer.messages.push(body);
+  buffer.ids.push(msgId);
+
+  if (buffer.timer) clearTimeout(buffer.timer);
+  buffer.timer = setTimeout(() => flushBuffer(fromNumber), BUFFER_WAIT_MS);
+}
 
 async function flushBuffer(fromNumber) {
   const buffer = messageBuffers.get(fromNumber);
@@ -252,128 +186,45 @@ async function flushBuffer(fromNumber) {
   messageBuffers.delete(fromNumber);
 
   const combinedText = buffer.messages.join('\n');
-  // Usamos el id del ÚLTIMO mensaje del lote, no del primero. Si en el
-  // futuro se dedupean reintentos por id, lo razonable es identificar el
-  // grupo por su mensaje más reciente.
   const finalMsgId = buffer.ids[buffer.ids.length - 1];
 
-  const metaPayload = {
-    entry: [
-      {
-        changes: [
-          {
-            value: {
-              messages: [
-                {
-                  from: fromNumber,
-                  id: finalMsgId,
-                  type: 'text',
-                  text: { body: combinedText },
-                },
-              ],
-            },
-          },
-        ],
-      },
-    ],
+  const payload = {
+    entry: [{
+      changes: [{
+        value: {
+          messages: [{
+            from: fromNumber,
+            id: finalMsgId,
+            type: 'text',
+            text: { body: combinedText },
+          }],
+        },
+      }],
+    }],
   };
 
   try {
     const headers = {};
-    if (SHARED_TOKEN) {
-      headers['Authorization'] = `Bearer ${SHARED_TOKEN}`;
-    }
-    log('info', `>>> Enviando a Flask: POST ${FLASK_WEBHOOK_URL} (from=${fromNumber})`);
-    await axios.post(FLASK_WEBHOOK_URL, metaPayload, { headers, timeout: 30000 });
-    log('info', `IN <${fromNumber}> (${buffer.messages.length} msg) -> Flask OK`);
-  } catch (error) {
-    const status = error.response && error.response.status;
-    log(
-      'error',
-      `!!! FALLO enviando a Flask en ${FLASK_WEBHOOK_URL} | from=${fromNumber} | HTTP ${status} | ${error.message}`
-    );
+    if (SHARED_TOKEN) headers['Authorization'] = `Bearer ${SHARED_TOKEN}`;
+    log('info', `>>> Enviando a Flask: from=${fromNumber} (${buffer.messages.length} msg)`);
+    await axios.post(FLASK_WEBHOOK_URL, payload, { headers, timeout: 30000 });
+    log('info', `IN <${fromNumber}> -> Flask OK`);
+  } catch (err) {
+    const status = err.response?.status;
+    log('error', `FALLO enviando a Flask | from=${fromNumber} | HTTP ${status} | ${err.message}`);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Reconexión
-// ---------------------------------------------------------------------------
-// Recreamos siempre el cliente: tras un disconnected, el objeto puppeteer
-// asociado puede quedar en estado degradado y reusar el mismo cliente es
-// parte de la causa del ProtocolError en inject. isInitializing impide que
-// dos ciclos de reconexión arranquen a la vez (cascada de clientes).
-function scheduleReconnect() {
-  if (reconnectTimer || isInitializing || isResetting) return;
-  reconnectAttempt += 1;
-  const delay = Math.min(RECONNECT_BASE_MS * 2 ** (reconnectAttempt - 1), RECONNECT_MAX_MS);
-  log('warn', `Reintentando inicialización en ${Math.round(delay / 1000)}s (intento #${reconnectAttempt})`);
-  reconnectTimer = setTimeout(async () => {
-    reconnectTimer = null;
-    if (isInitializing || isResetting) return;
-    isInitializing = true;
-    try {
-      try { await client.destroy(); } catch (_) { /* puede estar ya muerto */ }
-      client = crearCliente();
-      await client.initialize();
-    } catch (err) {
-      log('error', 'Fallo en reconnect:', err.message);
-      isInitializing = false;
-      scheduleReconnect();
-      return;
-    }
-    isInitializing = false;
-  }, delay);
-}
-
-// Borra la sesión local, destruye el cliente y arranca uno nuevo. Se usa
-// tanto desde POST /reset como desde el handler 'disconnected' cuando el
-// motivo indica logout/unpair (la sesión cacheada ya no sirve).
-async function wipeAndReinit(reason) {
-  if (isResetting || isInitializing) return;
-  isResetting = true;
-  isInitializing = true;
-  log('warn', `wipeAndReinit (${reason}): destruyendo cliente y borrando sesión local`);
-
-  isReady = false;
-  qrPending = false;
-  lastQrCode = null;
-
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-  }
-
-  try {
-    try {
-      await client.destroy();
-    } catch (err) {
-      log('warn', 'client.destroy() en wipeAndReinit falló:', err.message);
-    }
-
-    fs.rmSync(AUTH_DIR, { recursive: true, force: true });
-    log('info', `Sesión borrada en ${AUTH_DIR}`);
-
-    reconnectAttempt = 0;
-    client = crearCliente();
-    await client.initialize();
-  } finally {
-    isResetting = false;
-    isInitializing = false;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// HTTP
+// HTTP server
 // ---------------------------------------------------------------------------
 const app = express();
 app.use(express.json({ limit: '256kb' }));
 
-// Auth middleware solo para /send (el resto -- /health -- queda libre).
 function requireAuth(req, res, next) {
   if (!SHARED_TOKEN) return next();
   const header = req.get('Authorization') || '';
-  const expected = `Bearer ${SHARED_TOKEN}`;
-  if (header !== expected) {
+  if (header !== `Bearer ${SHARED_TOKEN}`) {
     return res.status(401).json({ error: 'unauthorized' });
   }
   next();
@@ -382,9 +233,8 @@ function requireAuth(req, res, next) {
 app.get('/health', (req, res) => {
   res.json({
     ready: isReady,
-    qr_pending: qrPending,
+    qr_pending: !!lastQrCode,
     last_disconnect: lastDisconnectReason,
-    reconnect_attempt: reconnectAttempt,
   });
 });
 
@@ -406,66 +256,55 @@ app.get('/qr', (req, res) => {
 
 app.post('/send', requireAuth, async (req, res) => {
   if (!isReady) {
-    return res
-      .status(503)
-      .json({ error: 'bridge_not_ready', qr_pending: qrPending });
+    return res.status(503).json({ error: 'bridge_not_ready', qr_pending: !!lastQrCode });
   }
 
   const { to, text } = req.body || {};
   const body = text && typeof text === 'object' ? text.body : null;
 
-  if (!to || typeof to !== 'string') {
-    return res.status(400).json({ error: 'invalid_to' });
-  }
-  if (!body || typeof body !== 'string') {
-    return res.status(400).json({ error: 'invalid_text' });
-  }
-  if (body.length > 4000) {
-    return res.status(400).json({ error: 'text_too_long' });
-  }
+  if (!to || typeof to !== 'string') return res.status(400).json({ error: 'invalid_to' });
+  if (!body || typeof body !== 'string') return res.status(400).json({ error: 'invalid_text' });
+  if (body.length > 4000) return res.status(400).json({ error: 'text_too_long' });
 
-  let targetId = to.replace(/\+/g, '');
-  if (!targetId.includes('@')) targetId += '@c.us';
-  
-  log('info', `DEBUG: Enviando respuesta a ${targetId} (limpio)`);
+  let jid = to.replace(/\+/g, '');
+  if (!jid.includes('@')) jid += '@s.whatsapp.net';
 
   try {
-    await client.sendMessage(targetId, body);
-    log('info', `OUT <${targetId}> (${body.length} chars)`);
+    await sock.sendMessage(jid, { text: body });
+    log('info', `OUT <${jid}> (${body.length} chars)`);
     res.json({ status: 'ok' });
   } catch (err) {
-    log('error', `FALLO CRITICO enviando a ${targetId}: ${err.message}`);
+    log('error', `FALLO enviando a ${jid}: ${err.message}`);
     res.status(502).json({ error: 'send_failed', message: err.message });
   }
 });
 
-// Resetea la sesión de WhatsApp: destruye el cliente, borra .wwebjs_auth/ y
-// reinicializa para que aparezca un QR nuevo. Se usa al cambiar de número o
-// cuando la sesión queda en estado raro tras vincular varios móviles.
 app.post('/reset', requireAuth, async (req, res) => {
-  if (isResetting) {
-    return res.status(429).json({ error: 'reset_in_progress' });
-  }
+  if (isResetting) return res.status(429).json({ error: 'reset_in_progress' });
+  isResetting = true;
   try {
-    await wipeAndReinit('manual_reset');
-    return res.json({ status: 'ok', message: 'sesión borrada, esperando nuevo QR en /qr' });
+    isReady = false;
+    lastQrCode = null;
+    if (sock) {
+      try { sock.end(); } catch (_) {}
+    }
+    wipeSession();
+    await conectar();
+    res.json({ status: 'ok', message: 'sesión borrada, esperando nuevo QR en /qr' });
   } catch (err) {
     log('error', '/reset falló:', err.message);
-    scheduleReconnect();
-    return res.status(500).json({ error: 'reset_failed', message: err.message });
+    res.status(500).json({ error: 'reset_failed', message: err.message });
+  } finally {
+    isResetting = false;
   }
 });
 
-// ---------------------------------------------------------------------------
-// Debug
-// ---------------------------------------------------------------------------
 app.get('/debug', async (req, res) => {
   const info = {
     bridge_ready: isReady,
-    qr_pending: qrPending,
+    qr_pending: !!lastQrCode,
     flask_webhook_url: FLASK_WEBHOOK_URL,
     shared_token_set: !!SHARED_TOKEN,
-    reconnect_attempt: reconnectAttempt,
     last_disconnect: lastDisconnectReason,
   };
   try {
@@ -479,31 +318,18 @@ app.get('/debug', async (req, res) => {
   res.json(info);
 });
 
-// ---------------------------------------------------------------------------
-// Arranque
-// ---------------------------------------------------------------------------
 app.listen(PORT, HOST, () => {
   log('info', `Bridge HTTP escuchando en ${HOST}:${PORT}`);
   log('info', `FLASK_WEBHOOK_URL = ${FLASK_WEBHOOK_URL}`);
 });
 
-isInitializing = true;
-client.initialize()
-  .then(() => { isInitializing = false; })
-  .catch((err) => {
-    isInitializing = false;
-    log('error', 'client.initialize() inicial falló:', err.message);
-    scheduleReconnect();
-  });
+// ---------------------------------------------------------------------------
+// Arranque
+// ---------------------------------------------------------------------------
+conectar().catch((err) => {
+  log('error', 'Error fatal al conectar:', err.message);
+  process.exit(1);
+});
 
-// Salida limpia
-function gracefulExit(signal) {
-  log('info', `Señal ${signal} recibida, cerrando...`);
-  // Forzamos flush de buffers pendientes para no perder mensajes del paciente.
-  const pending = Array.from(messageBuffers.keys());
-  Promise.allSettled(pending.map((number) => flushBuffer(number))).finally(() => {
-    client.destroy().finally(() => process.exit(0));
-  });
-}
-process.on('SIGINT', () => gracefulExit('SIGINT'));
-process.on('SIGTERM', () => gracefulExit('SIGTERM'));
+process.on('SIGINT', () => { log('info', 'SIGINT, cerrando...'); process.exit(0); });
+process.on('SIGTERM', () => { log('info', 'SIGTERM, cerrando...'); process.exit(0); });
