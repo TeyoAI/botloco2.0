@@ -181,30 +181,16 @@ function crearCliente() {
     log('info', 'change_state:', state);
   });
 
-  c.on('message_create', async (msg) => {
+  const handleAnyMsg = async (msg) => {
     if (isStale()) return;
-    
-    // Ignoramos estados para no ensuciar el log y no asustar al usuario
     if (msg.from === 'status@broadcast') return;
 
-    // Log de lo que entra
-    log('info', `Recibido: from=${msg.from} type=${msg.type} fromMe=${msg.fromMe} body="${msg.body ? msg.body.substring(0, 50) : ''}"`);
+    // Log forzado a error para que Railway lo muestre sin buffers
+    console.error(`[TRACE] Mensaje detectado: from=${msg.from} fromMe=${msg.fromMe} type=${msg.type} body="${msg.body || ''}"`);
 
-    if (msg.fromMe) {
-        log('debug', 'Ignorado: mensaje enviado por el propio bot');
-        return;
-    }
-    
-    if (msg.from.includes('@g.us')) {
-        log('debug', 'Ignorado: mensaje de grupo');
-        return;
-    }
-    
-    // Si el tipo no es chat, lo logueamos por si acaso
-    if (msg.type !== 'chat') {
-        log('info', `Tipo de mensaje no procesable: ${msg.type}`);
-        return;
-    }
+    if (msg.fromMe) return;
+    if (msg.from.includes('@g.us')) return;
+    if (msg.type !== 'chat') return;
 
     let chatId = msg.from;
     if (chatId.endsWith('@lid')) {
@@ -214,11 +200,9 @@ function crearCliente() {
           chatId = `${contact.number}@c.us`;
           log('info', `Resuelto @lid ${msg.from} -> ${chatId}`);
         } else {
-          log('warn', `@lid sin número resoluble (${msg.from}), descartando mensaje`);
           return;
         }
       } catch (err) {
-        log('warn', `getContact() falló para ${msg.from}: ${err.message}, descartando`);
         return;
       }
     }
@@ -238,8 +222,6 @@ function crearCliente() {
         startedAt: Date.now(),
       };
       messageBuffers.set(fromNumber, buffer);
-      // Cap absoluto: aunque sigan llegando mensajes, flush a los BUFFER_MAX_MS
-      // desde el primero, para que conversaciones encadenadas no queden retenidas.
       buffer.hardTimer = setTimeout(() => flushBuffer(fromNumber), BUFFER_MAX_MS);
     }
 
@@ -248,7 +230,10 @@ function crearCliente() {
 
     if (buffer.timer) clearTimeout(buffer.timer);
     buffer.timer = setTimeout(() => flushBuffer(fromNumber), BUFFER_WAIT_MS);
-  });
+  };
+
+  c.on('message', handleAnyMsg);
+  c.on('message_create', handleAnyMsg);
 
   return c;
 }
