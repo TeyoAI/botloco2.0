@@ -39,7 +39,7 @@ RUN cd whatsapp-bridge && npm install --omit=dev
 
 # ── Dependencias Python ───────────────────────────────────
 COPY requirements.txt ./
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
 # ── Código fuente ─────────────────────────────────────────
 COPY . .
