@@ -72,7 +72,14 @@ function crearCliente() {
   const isStale = () => generation !== clientGeneration;
 
   const c = new Client({
-    authStrategy: new LocalAuth(),
+    authStrategy: new LocalAuth({
+      clientId: `gen-${generation}`,
+      dataPath: './.wwebjs_auth'
+    }),
+    webVersionCache: {
+      type: 'remote',
+      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+    },
     puppeteer: {
       headless: true,
       // Margen sobre el default por si el contenedor va lento al inyectar el
@@ -131,6 +138,7 @@ function crearCliente() {
     lastQrCode = null;
     reconnectAttempt = 0;
     log('info', `[gen ${generation}] Cliente WhatsApp Web listo`);
+    log('info', `>>> MONITOR ACTIVADO - ESPERANDO MENSAJES (v1.0.6) <<<`);
   });
 
   c.on('disconnected', (reason) => {
