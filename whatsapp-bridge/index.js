@@ -17,9 +17,19 @@ const axios = require('axios');
 
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 
-// LocalAuth guarda la sesión aquí. Para que persista entre redeploys hace falta
-// montar un volume de Railway en esta ruta.
 const AUTH_DIR = path.join(__dirname, '.wwebjs_auth');
+
+// --- LIMPIEZA DE SESIÓN FORZADA (Arreglo para sesiones congeladas) ---
+if (fs.existsSync(AUTH_DIR)) {
+  console.log(`[LIMPIEZA] Borrando sesión vieja en ${AUTH_DIR}...`);
+  try {
+    fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+    console.log('[LIMPIEZA] Sesión borrada con éxito.');
+  } catch (err) {
+    console.error(`[LIMPIEZA] Error borrando sesión: ${err.message}`);
+  }
+}
+// ---------------------------------------------------------------------
 
 const PORT = parseInt(process.env.PORT || process.env.WA_BRIDGE_PORT || '3000', 10);
 const HOST = process.env.WA_BRIDGE_HOST || '0.0.0.0';
