@@ -57,7 +57,9 @@ const messageBuffers = new Map();
 // ---------------------------------------------------------------------------
 function wipeSession() {
   if (fs.existsSync(AUTH_DIR)) {
-    fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+    for (const entry of fs.readdirSync(AUTH_DIR)) {
+      fs.rmSync(path.join(AUTH_DIR, entry), { recursive: true, force: true });
+    }
     log('info', `Sesión borrada en ${AUTH_DIR}`);
   }
 }
