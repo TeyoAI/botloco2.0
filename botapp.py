@@ -572,6 +572,8 @@ def retell_webhook():
         datos = request.get_json(silent=True) or {}
         evento = datos.get("event")
         
+        log.info("📡 Webhook Retell recibido | Evento: %s | Payload: %s", evento, datos)
+        
         if evento == "call_analyzed":
             call = datos.get("call", {})
             
