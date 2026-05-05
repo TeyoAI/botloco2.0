@@ -655,8 +655,11 @@ def admin_page():
 
 @app.post("/admin/reset")
 def admin_reset():
+    headers = {}
+    if WA_BRIDGE_TOKEN:
+        headers["Authorization"] = f"Bearer {WA_BRIDGE_TOKEN}"
     try:
-        resp = requests.post("http://127.0.0.1:3000/admin/reset", timeout=10)
+        resp = requests.post("http://127.0.0.1:3000/admin/reset", headers=headers, timeout=10)
         return resp.text, resp.status_code, {"Content-Type": "text/html"}
     except requests.RequestException:
         return "<h2>Bridge no disponible.</h2>", 503
