@@ -321,6 +321,54 @@ app.post('/reset', requireAuth, async (req, res) => {
   }
 });
 
+app.get('/admin', (req, res) => {
+  const estado = isReady
+    ? `<p style="color:#4caf50;font-size:20px">✓ Bot conectado</p>`
+    : lastQrCode
+    ? `<p style="color:#ff9800;font-size:20px">⏳ Esperando escaneo de QR</p>`
+    : `<p style="color:#f44336;font-size:20px">✗ Bot desconectado</p>`;
+
+  res.send(`
+    <html>
+      <head><meta charset="utf-8"><title>Admin - Bot WhatsApp</title></head>
+      <body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#111;color:white;font-family:sans-serif;gap:20px">
+        <h1>Panel de administración</h1>
+        ${estado}
+        <a href="/qr" style="padding:12px 28px;background:#1976d2;color:white;border-radius:8px;text-decoration:none;font-size:16px">Ver QR / Estado conexión</a>
+        <form method="POST" action="/admin/reset" onsubmit="return confirm('¿Seguro? Esto desconectará el número actual y generará un nuevo QR.')">
+          <button type="submit" style="padding:12px 28px;background:#c62828;color:white;border:none;border-radius:8px;font-size:16px;cursor:pointer">
+            Cambiar número de WhatsApp
+          </button>
+        </form>
+        <script>setTimeout(() => location.reload(), 10000)</script>
+      </body>
+    </html>
+  `);
+});
+
+app.post('/admin/reset', requireAuth, async (req, res) => {
+  if (isResetting) {
+    return res.send(`<html><body style="background:#111;color:white;font-family:sans-serif;text-align:center;padding:50px">
+      <h2>Reset en progreso, espera unos segundos...</h2>
+      <script>setTimeout(() => location.href='/admin', 3000)</script>
+    </body></html>`);
+  }
+  isResetting = true;
+  try {
+    isReady = false;
+    lastQrCode = null;
+    if (sock) { try { sock.end(); } catch (_) {} }
+    wipeSession();
+    conectar().catch(err => log('error', 'Error reconectando tras reset:', err.message));
+    res.send(`<html><body style="background:#111;color:white;font-family:sans-serif;text-align:center;padding:50px">
+      <h2>Sesión borrada. Generando nuevo QR...</h2>
+      <script>setTimeout(() => location.href='/qr', 3000)</script>
+    </body></html>`);
+  } finally {
+    isResetting = false;
+  }
+});
+
 app.get('/debug', async (req, res) => {
   const info = {
     bridge_ready: isReady,
