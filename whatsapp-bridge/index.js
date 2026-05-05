@@ -12,6 +12,7 @@ const {
   DisconnectReason,
   isJidGroup,
   fetchLatestBaileysVersion,
+  Browsers,
 } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const express = require('express');
@@ -76,7 +77,7 @@ async function conectar() {
     auth: state,
     logger,
     printQRInTerminal: false,
-    browser: ['Sonrisas Bot', 'Chrome', '122.0.0'],
+    browser: Browsers.ubuntu('Chrome'),
     connectTimeoutMs: 60000,
     retryRequestDelayMs: 2000,
     maxMsgRetryCount: 3,
@@ -239,16 +240,34 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/qr', (req, res) => {
-  if (isReady) return res.send('Ya conectado');
-  if (!lastQrCode) return res.send('Esperando QR... recarga en 10 segundos');
+  if (isReady) {
+    return res.send(`
+      <html><body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#111;color:white;font-family:sans-serif">
+        <h2 style="color:#4caf50">✓ WhatsApp conectado</h2>
+        <p>El bot está activo y recibiendo mensajes.</p>
+        <script>setTimeout(() => location.reload(), 10000)</script>
+      </body></html>
+    `);
+  }
+  if (!lastQrCode) {
+    return res.send(`
+      <html><body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#111;color:white;font-family:sans-serif">
+        <h2>Generando QR...</h2>
+        <p>El bridge está arrancando. Recargando en 5 segundos.</p>
+        <script>setTimeout(() => location.reload(), 5000)</script>
+      </body></html>
+    `);
+  }
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=350x350&data=${encodeURIComponent(lastQrCode)}`;
+  const ts = new Date().toLocaleTimeString('es-ES');
   res.send(`
     <html>
       <body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#111;color:white;font-family:sans-serif">
-        <h2>Escanea este QR</h2>
+        <h2>Escanea este QR con WhatsApp</h2>
         <img src="${qrUrl}" style="border:10px solid white;border-radius:10px" />
-        <p>Se actualiza solo cada 30s</p>
-        <script>setTimeout(() => location.reload(), 30000)</script>
+        <p style="color:#aaa;font-size:13px">Generado a las ${ts} — expira en ~60s — recargando en 20s</p>
+        <button onclick="location.reload()" style="margin-top:10px;padding:8px 20px;font-size:15px;cursor:pointer">Recargar ahora</button>
+        <script>setTimeout(() => location.reload(), 20000)</script>
       </body>
     </html>
   `);
