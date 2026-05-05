@@ -108,7 +108,10 @@ async function conectar() {
       const code = lastDisconnect?.error?.output?.statusCode;
       const reason = DisconnectReason[code] || code;
       lastDisconnectReason = String(reason);
-      log('warn', `Desconectado. Código: ${code} | Razón: ${reason}`);
+      const errMsg = lastDisconnect?.error?.message || '';
+      const errFull = lastDisconnect?.error ? JSON.stringify(lastDisconnect.error, Object.getOwnPropertyNames(lastDisconnect.error)) : 'none';
+      log('warn', `Desconectado. Código: ${code} | Razón: ${reason} | Mensaje: ${errMsg}`);
+      log('warn', `Error completo: ${errFull}`);
 
       const loggedOut = code === DisconnectReason.loggedOut;
 
