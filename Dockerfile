@@ -1,7 +1,7 @@
 # ============================================================
 # Contenedor unificado: Flask bot + WhatsApp bridge (Baileys)
 # ============================================================
-FROM node:18-slim
+FROM node:20-slim
 
 # ── Dependencias del sistema ──────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
