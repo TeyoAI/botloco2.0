@@ -357,12 +357,13 @@ def enviar_a_whatsapp(numero_destino: str, texto: str) -> bool:
 # Make: Consultar_Doctores
 # ---------------------------------------------------------------------------
 def consultar_doctores(servicio: str) -> dict:
-    if not MAKE_WEBHOOK_DOCTORES:
-        log.warning("MAKE_WEBHOOK_DOCTORES no configurado")
+    webhook_url = WEBHOOKS_MAKE.get("Consultar_Doctores")
+    if not webhook_url:
+        log.warning("Webhook de Consultar_Doctores no configurado")
         return {"ok": False, "error": "webhook_not_configured"}
     try:
         respuesta = requests.post(
-            MAKE_WEBHOOK_DOCTORES,
+            webhook_url,
             json={"servicio": servicio},
             timeout=15,
         )
@@ -486,7 +487,7 @@ def debug():
     info = {
         "wa_bridge_url": WA_BRIDGE_URL,
         "wa_bridge_token_set": bool(WA_BRIDGE_TOKEN),
-        "make_webhook_set": bool(MAKE_WEBHOOK_DOCTORES),
+        "make_webhook_set": bool(WEBHOOKS_MAKE.get("Consultar_Doctores")),
         "openai_key_set": bool(OPENAI_API_KEY),
         "openai_model": OPENAI_MODEL,
         "sesiones_activas": len(sesiones),
@@ -681,6 +682,6 @@ if __name__ == "__main__":
     log.info("=== CONFIGURACION ===")
     log.info("WA_BRIDGE_URL     = %s", WA_BRIDGE_URL)
     log.info("OPENAI_MODEL      = %s", OPENAI_MODEL)
-    log.info("MAKE_WEBHOOK_SET  = %s", bool(MAKE_WEBHOOK_DOCTORES))
+    log.info("MAKE_WEBHOOK_SET  = %s", bool(WEBHOOKS_MAKE.get("Consultar_Doctores")))
     log.info("====================")
     app.run(host=host, port=port, debug=False)
