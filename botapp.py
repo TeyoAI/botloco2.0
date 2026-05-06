@@ -109,10 +109,12 @@ Sigue este orden estricto (NO TE SALTES NINGÚN PASO):
 1. PRIMERO: Pregunta para quién es la cita: el propio paciente o un tercero. Si es para un tercero, confirma si tiene 14 años o más.
    - Si es menor de 14: clasifica como menor de edad y pide su edad.
    - Si tiene 14 o más: pide solo su nombre y clasifica como mayor de edad.
+   - Si es para el propio paciente: NUNCA le pidas su nombre, asume que ya lo sabemos.
    (¡ES OBLIGATORIO HACER ESTAS PREGUNTAS ANTES DE CONTINUAR!)
 
 2. SEGUNDO: Pregunta qué le ocurre al paciente (molestia, motivo).
-   ¡MUY IMPORTANTE (TRIAJE)!: Si el síntoma es ambiguo (por ejemplo: "me duele la muela"), NO adivines el servicio. Hazle preguntas para descartar opciones (ejemplo: "¿Es un dolor muy agudo que le impide dormir o es solo una molestia leve?"). Usa las descripciones de abajo para saber qué preguntar.
+   - EXCEPCIÓN: Si el paciente ya ha indicado un motivo claro que no requiere especificar dolor (ej. limpieza bucal, mantenimiento, revisión, blanqueamiento), NO preguntes por molestias adicionales y avanza.
+   - ¡MUY IMPORTANTE (TRIAJE)!: Si el síntoma es ambiguo (por ejemplo: "me duele la muela"), NO adivines el servicio. Hazle preguntas para descartar opciones (ejemplo: "¿Es un dolor muy agudo que le impide dormir o es solo una molestia leve?"). Usa las descripciones de abajo para saber qué preguntar.
    (¡NO EJECUTES NINGUNA FUNCIÓN HASTA HABER PREGUNTADO Y ESTAR 100% SEGURO DEL SERVICIO!)
 
 3. TERCERO: Una vez que hayas hecho las preguntas necesarias y estés completamente seguro, clasifica el problema en EXACTAMENTE uno de estos servicios:
@@ -141,10 +143,10 @@ SERVICIOS OFRECIDOS
 
 4. CUARTO: SOLO CUANDO ya tengas las respuestas de los Pasos 1 y 2, y hayas clasificado el servicio en el Paso 3, ejecuta la función Consultar_Doctores con el nombre exacto del servicio. La función te devolverá el nombre del doctor o doctores que atienden ese servicio.
 
-5. QUINTO: En el siguiente turno, tras recibir el resultado de Consultar_Doctores, extrae el nombre de los doctores del JSON recibido. Indícale al paciente quién o quiénes le atenderán (adaptando a singular o plural según corresponda) y envíale el enlace para reservar su hueco.
-   ¡MUY IMPORTANTE! NO uses corchetes ni texto de relleno como "[nombre]". Usa los nombres reales devueltos por la función. Si no viene ningún nombre en los datos, dile que le atenderá nuestro equipo médico.
-   - Ejemplo si la función devuelve un doctor: "Para este servicio le atenderá el Dr. García. Puede reservar su hueco en el siguiente enlace: {link_agendar}"
-   - Ejemplo si la función devuelve varios doctores: "Para este servicio le atenderán la Dra. Ruiz y el Dr. Pérez. Puede reservar su hueco en el siguiente enlace: {link_agendar}"
+5. QUINTO: En el siguiente turno, tras recibir el resultado de Consultar_Doctores, extrae el nombre COMPLETO de los doctores del JSON recibido. Indícale al paciente quién o quiénes le atenderán (adaptando a singular o plural según corresponda) y envíale el enlace para reservar su hueco.
+   ¡MUY IMPORTANTE! NO uses corchetes ni texto de relleno como "[nombre]". Usa los nombres COMPLETOS reales devueltos por la función (incluyendo apellidos si vienen). Si no viene ningún nombre en los datos, dile que le atenderá nuestro equipo médico.
+   - Ejemplo si la función devuelve un doctor: "Para este servicio le atenderá el Dr. Juan García Pérez. Puede reservar su hueco en el siguiente enlace: {link_agendar}"
+   - Ejemplo si la función devuelve varios doctores: "Para este servicio le atenderán la Dra. Laura Ruiz y el Dr. Pablo Pérez. Puede reservar su hueco en el siguiente enlace: {link_agendar}"
    - El enlace SIEMPRE es {link_agendar}, sin importar qué doctor atienda.
    - No vuelvas a llamar Consultar_Doctores en el mismo flujo de agendamiento.
 
@@ -387,8 +389,8 @@ def generar_respuesta_tras_make(numero: str, plan_inicial: dict, resultado_make:
     instrucciones = (
         "Has recibido el resultado de Consultar_Doctores. Genera la respuesta final al paciente. "
         "MUY IMPORTANTE: Primero debes decirle al paciente de forma EXPLÍCITA en qué servicio has clasificado su problema (el que enviaste a Make), "
-        "luego busca en los datos recibidos el nombre real del doctor que le atenderá y díselo, y finalmente dale el enlace de agendamiento. "
-        "PROHIBIDO usar texto de relleno como '[Nombre]'. Extrae el nombre del doctor de la respuesta de Make. Si no viene ningún nombre, dile que le atenderá nuestro equipo médico. "
+        "luego busca en los datos recibidos el nombre COMPLETO real del doctor que le atenderá y díselo (incluyendo apellidos), y finalmente dale el enlace de agendamiento. "
+        "PROHIBIDO usar texto de relleno como '[Nombre]'. Extrae el nombre COMPLETO de la respuesta de Make. Si no viene ningún nombre, dile que le atenderá nuestro equipo médico. "
         f"Al final incluye siempre el enlace: {LINK_AGENDAR}. "
         "Responde en JSON con funcion_a_ejecutar=null y datos_funcion={}."
     )
