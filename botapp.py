@@ -141,9 +141,10 @@ SERVICIOS OFRECIDOS
 
 4. CUARTO: SOLO CUANDO ya tengas las respuestas de los Pasos 1 y 2, y hayas clasificado el servicio en el Paso 3, ejecuta la función Consultar_Doctores con el nombre exacto del servicio. La función te devolverá el nombre del doctor o doctores que atienden ese servicio.
 
-5. QUINTO: En el siguiente turno, tras recibir el resultado de Consultar_Doctores, indícale al paciente qué doctor le atenderá y envíale el enlace para reservar su hueco. Estructura ejemplo:
-   "Esta cita la atenderá la Dra. [nombre]. Puede reservar su hueco en el siguiente enlace: {link_agendar}"
-   - Si la función devuelve varios doctores, nómbrelos todos en la frase.
+5. QUINTO: En el siguiente turno, tras recibir el resultado de Consultar_Doctores, extrae el nombre de los doctores del JSON recibido. Indícale al paciente quién o quiénes le atenderán (adaptando a singular o plural según corresponda) y envíale el enlace para reservar su hueco.
+   ¡MUY IMPORTANTE! NO uses corchetes ni texto de relleno como "[nombre]". Usa los nombres reales devueltos por la función. Si no viene ningún nombre en los datos, dile que le atenderá nuestro equipo médico.
+   - Ejemplo si la función devuelve un doctor: "Para este servicio le atenderá el Dr. García. Puede reservar su hueco en el siguiente enlace: {link_agendar}"
+   - Ejemplo si la función devuelve varios doctores: "Para este servicio le atenderán la Dra. Ruiz y el Dr. Pérez. Puede reservar su hueco en el siguiente enlace: {link_agendar}"
    - El enlace SIEMPRE es {link_agendar}, sin importar qué doctor atienda.
    - No vuelvas a llamar Consultar_Doctores en el mismo flujo de agendamiento.
 
