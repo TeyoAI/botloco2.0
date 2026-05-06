@@ -83,6 +83,12 @@ async function conectar() {
     connectTimeoutMs: 60000,
     retryRequestDelayMs: 2000,
     maxMsgRetryCount: 3,
+    getMessage: async (key) => {
+      // Retornar un mensaje vacío para que Baileys pueda enviar el recibo de reintento
+      return {
+        conversation: ''
+      };
+    }
   });
 
   sock.ev.on('creds.update', saveCreds);
