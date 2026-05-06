@@ -38,7 +38,7 @@ OPENAI_TIMEOUT_S = int(os.getenv("OPENAI_TIMEOUT_S", "30"))
 WA_BRIDGE_URL = os.getenv("WA_BRIDGE_URL", "http://127.0.0.1:3000").rstrip("/")
 WA_BRIDGE_TOKEN = os.getenv("WA_BRIDGE_TOKEN", "").strip()
 
-MAKE_WEBHOOK_DOCTORES = os.getenv("MAKE_WEBHOOK_DOCTORES", "").strip()
+WEBHOOKS_MAKE = { "Consultar_Doctores":os.getenv("MAKE_WEBHOOK_DOCTORES","")}
 
 SESSION_TIMEOUT_MIN = 30
 MAX_HISTORIAL = 30
@@ -195,7 +195,10 @@ SIEMPRE respondes en JSON válido con esta estructura exacta:
 - La única función que puedes llamar es Consultar_Doctores. Cualquier otra cosa va con funcion_a_ejecutar=null y datos_funcion={{}}.
 - ¡REGLA DE ORO!: funcion_a_ejecutar DEBE SER null mientras estás haciendo las preguntas de los pasos 1 y 2. ¡NO te inventes un servicio! Solo pon "Consultar_Doctores" cuando el paciente ya te haya respondido TODO lo necesario.
 - Cuando llames Consultar_Doctores, datos_funcion debe contener exclusivamente el campo "servicio_requerido" con el nombre exacto del servicio elegido (de la lista de SERVICIOS OFRECIDOS).
-- Nunca incluyas otros campos en datos_funcion."""
+- Nunca incluyas otros campos en datos_funcion.
+DICCIONARIO DE FUNCIONES Y PARÁMETROS ESTRICTOS:
+Solo puedes rellenar 'funcion_a_ejecutar' con uno de estos nombres exactos y enviar EXCLUSIVAMENTE los parámetros que se indican en 'datos_funcion':
+- Consultar_Doctores: requiere {"servicio_requerido":"..."}"""
 
 
 def construir_prompt_maestro() -> str:
