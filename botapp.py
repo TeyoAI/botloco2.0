@@ -198,7 +198,7 @@ SIEMPRE respondes en JSON válido con esta estructura exacta:
 - Nunca incluyas otros campos en datos_funcion.
 DICCIONARIO DE FUNCIONES Y PARÁMETROS ESTRICTOS:
 Solo puedes rellenar 'funcion_a_ejecutar' con uno de estos nombres exactos y enviar EXCLUSIVAMENTE los parámetros que se indican en 'datos_funcion':
-- Consultar_Doctores: requiere {"servicio_requerido":"..."}"""
+- Consultar_Doctores: requiere {{"servicio_requerido":"..."}}"""
 
 
 def construir_prompt_maestro() -> str:
