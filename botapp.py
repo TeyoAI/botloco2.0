@@ -619,8 +619,10 @@ def retell_webhook():
 
             elif "aseguradora" in motivo:
                 mensaje = (
-                    "Gracias por consultarnos sobre tu aseguradora. "
-                    "Recuerda traer tu tarjeta física o digital el día de tu cita para poder tramitar la autorización."
+                    "¡Hola! Hemos visto que querías hablar con nosotros. "
+                    "Para poder atenderte personalmente, llámanos en nuestro horario laboral:"
+                    "🕒 Lunes a Jueves: 10:00 - 14:00 y 15:30 - 19:30.\nY Viernes: 10:00 - 14:00\n"
+                    "¡Estaremos encantados de ayudarte!"
                 )
                 enviar_a_whatsapp(numero_cliente, mensaje)
 
