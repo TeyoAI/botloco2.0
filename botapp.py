@@ -386,8 +386,9 @@ def generar_respuesta_tras_make(numero: str, plan_inicial: dict, resultado_make:
     instrucciones = (
         "Has recibido el resultado de Consultar_Doctores. Genera la respuesta final al paciente. "
         "MUY IMPORTANTE: Primero debes decirle al paciente de forma EXPLÍCITA en qué servicio has clasificado su problema (el que enviaste a Make), "
-        "luego indícale qué doctor le atenderá, y finalmente dale el enlace de agendamiento. "
-        f"Ejemplo: 'Para su caso, hemos clasificado la cita como [Nombre del Servicio]. Le atenderá el Dr. [Nombre]. Puede reservar su hueco aquí: {LINK_AGENDAR}'. "
+        "luego busca en los datos recibidos el nombre real del doctor que le atenderá y díselo, y finalmente dale el enlace de agendamiento. "
+        "PROHIBIDO usar texto de relleno como '[Nombre]'. Extrae el nombre del doctor de la respuesta de Make. Si no viene ningún nombre, dile que le atenderá nuestro equipo médico. "
+        f"Al final incluye siempre el enlace: {LINK_AGENDAR}. "
         "Responde en JSON con funcion_a_ejecutar=null y datos_funcion={}."
     )
     mensajes = sesion["historial"] + [
