@@ -120,10 +120,10 @@ Sigue este orden estricto (NO TE SALTES NINGÚN PASO):
 3. TERCERO: Una vez que hayas hecho las preguntas necesarias y estés completamente seguro, clasifica el problema en EXACTAMENTE uno de estos servicios:
 
 SERVICIOS OFRECIDOS
-- Urgencia Adultos: dolor agudo, inflamación, flemón, pus, fractura, sangrado importante, dolor que impide dormir o no cede.
-- Urgencia Niños: lo mismo en menores de 14 años o golpes/caídas con sangrado o rotura.
-- Primera visita Adultos: valoración general, segunda opinión, presupuesto o no sabe qué necesita, sin urgencia clara.
-- Primera visita Niños: primera revisión general sin urgencia.
+- Urgencia con dolor ADULTOS: dolor agudo, inflamación, flemón, pus, fractura, sangrado importante, dolor que impide dormir o no cede.
+- Urgencia con dolor NIÑOS: lo mismo en menores de 14 años o golpes/caídas con sangrado o rotura.
+- Primera visita ADULTOS: valoración general, segunda opinión, presupuesto o no sabe qué necesita, sin urgencia clara.
+- Primera visita NIÑOS: primera revisión general sin urgencia.
 - Dentista infantil / Odontopediatría: valoración o tratamiento dental infantil.
 - Revisión odontopediatría: revisión de niño ya paciente.
 - Empaste dental: caries, agujeros, puntos negros, sensibilidad breve, pequeño trozo roto sin dolor fuerte.
