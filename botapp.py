@@ -44,6 +44,24 @@ SESSION_TIMEOUT_MIN = 30
 MAX_HISTORIAL = 30
 TZ_MADRID = ZoneInfo("Europe/Madrid")
 
+
+def clinica_abierta() -> bool:
+    """Devuelve True si ahora mismo la clínica está en horario de atención.
+
+    L-J: 10:00-14:00 y 15:30-19:30
+    V:   10:00-14:00
+    S-D: cerrado
+    """
+    ahora = datetime.now(TZ_MADRID)
+    dia = ahora.weekday()  # 0=lunes … 6=domingo
+    t = ahora.hour * 60 + ahora.minute  # minutos desde medianoche
+
+    if dia <= 3:  # lunes a jueves
+        return (600 <= t < 840) or (930 <= t < 1170)
+    if dia == 4:  # viernes
+        return 600 <= t < 840
+    return False  # sábado y domingo
+
 # Enlaces fijos del flujo
 LINK_AGENDAR = "https://eu.doct.to/ggyp1bcr"
 LINK_DOCTORALIA_IOS = (
@@ -550,6 +568,10 @@ def webhook():
     if es_mensaje_duplicado(message_id):
         log.info("Mensaje duplicado %s ignorado", message_id)
         return jsonify({"ok": True, "ignored": "duplicate"}), 200
+
+    if clinica_abierta():
+        log.info("Clínica abierta — mensaje de %s ignorado", numero)
+        return jsonify({"ok": True, "ignored": "clinic_open"}), 200
 
     log.info("IN <%s>: %s", numero, texto[:120])
 
